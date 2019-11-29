@@ -1,85 +1,121 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
-	"log"
-	"strings"
 
 	"github.com/wansing/auth/server"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var db *server.Database
 
-func insert() {
+func all() {
+	if all, err := db.All(); err == nil {
+		for _, username := range all {
+			fmt.Println(username)
+		}
+	} else {
+		fmt.Println(err)
+	}
+}
 
-	var username, password, repeatPassword  string
-
-	fmt.Print("Username: ")
-	if _, err := fmt.Scanln(&username); err != nil {
-		log.Println(err)
+func delete(username string) {
+	if err := db.Delete(username); err != nil {
+		fmt.Println(err)
 		return
 	}
+}
+
+func insert(username string) {
+
+	var password, repeatPassword []byte
+	var err error
 
 	fmt.Print("Password: ")
-	if _, err := fmt.Scanln(&password); err != nil {
-		log.Println(err)
+	if password, err = terminal.ReadPassword(0); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println()
+
+	if len(password) == 0 {
+		fmt.Println("Password is empty")
 		return
 	}
 
 	fmt.Print("Repeat password: ")
-	if _, err := fmt.Scanln(&repeatPassword); err != nil {
-		log.Println(err)
+	if repeatPassword, err = terminal.ReadPassword(0); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println()
+
+	if !bytes.Equal(password, repeatPassword) {
+		fmt.Println("Repetition doesn't match")
 		return
 	}
 
-	if password == "" {
-		log.Println("Password is empty")
+	if err := db.Insert(username, string(password)); err != nil {
+		fmt.Printf("Error inserting: %v\n", err)
 		return
 	}
+}
 
-	if password != repeatPassword {
-		log.Println("Repetition doesn't match")
+func verify(username string) {
+
+	var password []byte
+	var err error
+
+	fmt.Print("Password: ")
+	if password, err = terminal.ReadPassword(0); err != nil {
+		fmt.Println(err)
 		return
 	}
+	fmt.Println()
 
-	if err := db.Insert(username, password); err != nil {
-		log.Printf("Error inserting: %v", err)
+	if success, err := db.Authenticate(username, string(password)); err == nil {
+		if success {
+			fmt.Println("Verification ok")
+		} else {
+			fmt.Println("Verification failed")
+		}
+	} else {
+		fmt.Printf("Error verifying: %v", err)
 		return
 	}
 }
 
 func main() {
 
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: authcli [flags] command\n  command\n        insert|TODO\n")
-		flag.PrintDefaults()
-	}
-
+	argAll := flag.Bool("all", false, "list all usernames")
+	argDelete := flag.String("delete", "", "delete a user")
+	argInsert := flag.String("insert", "", "insert a user")
+	argVerify := flag.String("verify", "", "verify the password of a user")
 	dbDriver, dbDSN := server.DBFlags()
 	flag.Parse()
-
-	if flag.NArg() == 0 {
-		fmt.Println("Please specify a command")
-		return
-	}
-	action := strings.ToLower(flag.Arg(0))
 
 	// open database
 
 	var err error
 	db, err = server.OpenDatabase(*dbDriver, *dbDSN)
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Println(err)
+		return
 	}
 	defer db.Close()
 
-	log.Printf("Opened %s database %s", *dbDriver, *dbDSN)
-
-	switch action {
-	case "insert":
-		insert()
+	switch {
+	case *argInsert != "":
+		insert(*argInsert)
+	case *argAll:
+		all()
+	case *argDelete != "":
+		delete(*argDelete)
+	case *argVerify != "":
+		verify(*argVerify)
 	default:
-		fmt.Printf("Unknown action: %s", action)
+		fmt.Println("no command specified")
 	}
 }

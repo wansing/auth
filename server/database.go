@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"encoding/base64"
+	"sort"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -15,6 +16,7 @@ import (
 
 type Database struct {
 	*sql.DB
+	allStmt    *sql.Stmt
 	authStmt   *sql.Stmt
 	deleteStmt *sql.Stmt
 	insertStmt *sql.Stmt
@@ -37,7 +39,7 @@ func OpenDatabase(backend, connStr string) (*Database, error) {
 
 	_, err = sqlDB.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
-			username TEXT PRIMARY KEY, -- convention: lowercase
+			name TEXT PRIMARY KEY, -- convention: lowercase
 			salt TEXT NOT NULL,
 			scheme TEXT NOT NULL,
 			hash TEXT NOT NULL
@@ -49,9 +51,10 @@ func OpenDatabase(backend, connStr string) (*Database, error) {
 
 	db := &Database{DB: sqlDB}
 
-	db.authStmt = db.mustPrepare("SELECT salt, scheme, hash FROM users WHERE username = ?")
-	db.deleteStmt = db.mustPrepare("DELETE FROM users WHERE username = ?")
-	db.insertStmt = db.mustPrepare("INSERT INTO users (username, salt, scheme, hash) VALUES (?, ?, ?, ?)")
+	db.allStmt = db.mustPrepare("SELECT name FROM users")
+	db.authStmt = db.mustPrepare("SELECT salt, scheme, hash FROM users WHERE name = ?")
+	db.deleteStmt = db.mustPrepare("DELETE FROM users WHERE name = ?")
+	db.insertStmt = db.mustPrepare("INSERT INTO users (name, salt, scheme, hash) VALUES (?, ?, ?, ?)")
 
 	return db, nil
 }
@@ -61,9 +64,9 @@ func SSHA512(password, salt string) string {
 	return base64.StdEncoding.EncodeToString(sum[:])                                 // convert array to slice
 }
 
-func (s *Database) Authenticate(username, password string) (success bool, err error) {
+func (db *Database) Authenticate(username, password string) (success bool, err error) {
 
-	rows, err := s.authStmt.Query(username)
+	rows, err := db.authStmt.Query(username)
 	if err != nil {
 		err = nil // user not found is not an error
 		return
@@ -104,12 +107,32 @@ func (s *Database) Authenticate(username, password string) (success bool, err er
 	return
 }
 
-func (s *Database) Delete(username string) error {
-	_, err := s.deleteStmt.Exec(username)
+func (db *Database) All() ([]string, error) {
+
+	rows, err := db.allStmt.Query()
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	defer rows.Close()
+
+	all := []string{}
+	for rows.Next() {
+		var username string
+		rows.Scan(&username)
+		all = append(all, username)
+	}
+
+	sort.Strings(all)
+
+	return all, nil
+}
+
+func (db *Database) Delete(username string) error {
+	_, err := db.deleteStmt.Exec(username)
 	return err
 }
 
-func (s *Database) Insert(username, password string) error {
+func (db *Database) Insert(username, password string) error {
 
 	b := make([]byte, 24)
 
@@ -120,6 +143,6 @@ func (s *Database) Insert(username, password string) error {
 
 	salt := base64.StdEncoding.EncodeToString(b)
 
-	_, err = s.insertStmt.Exec(username, salt, "ssha512", SSHA512(password, salt))
+	_, err = db.insertStmt.Exec(username, salt, "ssha512", SSHA512(password, salt))
 	return err
 }
