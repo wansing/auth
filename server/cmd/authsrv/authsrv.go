@@ -84,6 +84,8 @@ func main() {
 	}
 	defer listener.Close() // removes the socket file
 
+	_ = os.Chmod(*socketPath, os.ModePerm) // chmod 777, so people can connect to the listener
+
 	log.Printf("Listening to %s", *socketPath)
 
 	// accept connections
