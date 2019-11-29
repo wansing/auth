@@ -11,8 +11,6 @@ import (
 
 var preferredScheme = Bcrypt{}
 
-var ErrNoRows = sql.ErrNoRows
-
 type Database struct {
 	*sql.DB
 	allStmt    *sql.Stmt
@@ -61,6 +59,8 @@ func OpenDatabase(backend, connStr string) (*Database, error) {
 
 func (db *Database) Authenticate(username, password string) error {
 
+	username = strings.ToLower(username)
+
 	row := db.authStmt.QueryRow(username)
 
 	var schemeStr string
@@ -98,11 +98,14 @@ func (db *Database) All() ([]string, error) {
 }
 
 func (db *Database) Delete(username string) error {
+	username = strings.ToLower(username)
 	_, err := db.deleteStmt.Exec(username)
 	return err
 }
 
 func (db *Database) Insert(username, password string) error {
+
+	username = strings.ToLower(username)
 
 	hash, err := preferredScheme.Generate(password)
 	if err != nil {
@@ -114,6 +117,8 @@ func (db *Database) Insert(username, password string) error {
 }
 
 func (db *Database) Reset(username, password string) error {
+
+	username = strings.ToLower(username)
 
 	hash, err := preferredScheme.Generate(password)
 	if err != nil {

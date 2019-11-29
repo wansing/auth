@@ -33,11 +33,8 @@ func handle(conn net.Conn) {
 	saslServer := sasl.NewPlainServer(func(identity, username, password string) error {
 		if err := Db.Authenticate(username, password); err == nil {
 			authenticated = true
-		} else {
-			if err != server.ErrNoRows {
-				log.Println(err)
-			}
 		}
+		// we ignore other errors at the moment
 		return nil // err would be returned by saslServer.Next()
 	})
 
