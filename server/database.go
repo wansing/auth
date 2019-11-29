@@ -1,18 +1,15 @@
 package server
 
 import (
-	"crypto/rand"
-	"crypto/sha512"
 	"database/sql"
-	"fmt"
-	"encoding/base64"
 	"sort"
-	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var preferredScheme = Bcrypt{}
 
 type Database struct {
 	*sql.DB
@@ -20,6 +17,7 @@ type Database struct {
 	authStmt   *sql.Stmt
 	deleteStmt *sql.Stmt
 	insertStmt *sql.Stmt
+	resetStmt  *sql.Stmt
 }
 
 func (db *Database) mustPrepare(query string) *sql.Stmt {
@@ -39,10 +37,9 @@ func OpenDatabase(backend, connStr string) (*Database, error) {
 
 	_, err = sqlDB.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
-			name TEXT PRIMARY KEY, -- convention: lowercase
-			salt TEXT NOT NULL,
+			name TEXT PRIMARY KEY,
 			scheme TEXT NOT NULL,
-			hash TEXT NOT NULL
+			hash BLOB NOT NULL
 		);
 	`)
 	if err != nil {
@@ -52,65 +49,36 @@ func OpenDatabase(backend, connStr string) (*Database, error) {
 	db := &Database{DB: sqlDB}
 
 	db.allStmt = db.mustPrepare("SELECT name FROM users")
-	db.authStmt = db.mustPrepare("SELECT salt, scheme, hash FROM users WHERE name = ?")
+	db.authStmt = db.mustPrepare("SELECT scheme, hash FROM users WHERE name = ?")
 	db.deleteStmt = db.mustPrepare("DELETE FROM users WHERE name = ?")
-	db.insertStmt = db.mustPrepare("INSERT INTO users (name, salt, scheme, hash) VALUES (?, ?, ?, ?)")
+	db.insertStmt = db.mustPrepare("INSERT INTO users (name, scheme, hash) VALUES (?, ?, ?)")
+	db.resetStmt = db.mustPrepare("UPDATE users SET scheme = ?, hash = ? WHERE name = ?")
 
 	return db, nil
 }
 
-func SSHA512(password, salt string) string {
-	sum := sha512.Sum512([]byte(password + salt)) // like dovecot's doveadm, we do just concatenate the plaintext password and the salt
-	return base64.StdEncoding.EncodeToString(sum[:])                                 // convert array to slice
-}
+func (db *Database) Authenticate(username, password string) error {
 
-func (db *Database) Authenticate(username, password string) (success bool, err error) {
+	row := db.authStmt.QueryRow(username)
 
-	rows, err := db.authStmt.Query(username)
+	var schemeStr string
+	var hash []byte
+	if err := row.Scan(&schemeStr, &hash); err != nil {
+		return err
+	}
+
+	scheme, err := GetScheme(schemeStr)
 	if err != nil {
-		err = nil // user not found is not an error
-		return
-	}
-	defer rows.Close()
-
-	var salt, scheme string
-	var dbHash string
-
-	for rows.Next() {
-		err = rows.Scan(&salt, &scheme, &dbHash)
-		if err != nil {
-			return
-		}
-		break
+		return err
 	}
 
-	if rows.Next() {
-		err = fmt.Errorf("Multiple results for user %s", username)
-		return
-	}
-
-	if salt == "" || dbHash == "" {
-		err = fmt.Errorf("Incomplete record for user %s", username)
-		return
-	}
-
-	var passwordHash string
-	switch strings.ToLower(scheme) {
-	case "ssha512":
-		passwordHash = SSHA512(password, salt)
-	default:
-		err = fmt.Errorf("Unknown hash scheme for user %s", username)
-		return
-	}
-
-	success = (passwordHash == dbHash)
-	return
+	return scheme.Compare(hash, password)
 }
 
 func (db *Database) All() ([]string, error) {
 
 	rows, err := db.allStmt.Query()
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
@@ -134,15 +102,22 @@ func (db *Database) Delete(username string) error {
 
 func (db *Database) Insert(username, password string) error {
 
-	b := make([]byte, 24)
-
-	_, err := rand.Read(b)
+	hash, err := preferredScheme.Generate(password)
 	if err != nil {
 		return err
 	}
 
-	salt := base64.StdEncoding.EncodeToString(b)
+	_, err = db.insertStmt.Exec(username, preferredScheme.Name(), hash)
+	return err
+}
 
-	_, err = db.insertStmt.Exec(username, salt, "ssha512", SSHA512(password, salt))
+func (db *Database) Reset(username, password string) error {
+
+	hash, err := preferredScheme.Generate(password)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.resetStmt.Exec(preferredScheme.Name(), hash, username)
 	return err
 }

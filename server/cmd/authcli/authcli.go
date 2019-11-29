@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 
@@ -28,37 +29,57 @@ func delete(username string) {
 	}
 }
 
-func insert(username string) {
-
-	var password, repeatPassword []byte
-	var err error
+func promptPasswords() (string, error) {
 
 	fmt.Print("Password: ")
-	if password, err = terminal.ReadPassword(0); err != nil {
-		fmt.Println(err)
-		return
+	password, err := terminal.ReadPassword(0)
+	if err != nil {
+		return "", err
 	}
 	fmt.Println()
 
 	if len(password) == 0 {
-		fmt.Println("Password is empty")
-		return
+		return "", errors.New("Password is empty")
 	}
 
 	fmt.Print("Repeat password: ")
-	if repeatPassword, err = terminal.ReadPassword(0); err != nil {
-		fmt.Println(err)
-		return
+	repeatPassword, err := terminal.ReadPassword(0)
+	if err != nil {
+		return "", err
 	}
 	fmt.Println()
 
 	if !bytes.Equal(password, repeatPassword) {
-		fmt.Println("Repetition doesn't match")
+		return "", errors.New("Repetition doesn't match")
+	}
+
+	return string(password), nil
+}
+
+func insert(username string) {
+
+	password, err := promptPasswords()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	if err := db.Insert(username, string(password)); err != nil {
+	if err := db.Insert(username, password); err != nil {
 		fmt.Printf("Error inserting: %v\n", err)
+		return
+	}
+}
+
+func reset(username string) {
+
+	password, err := promptPasswords()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if err := db.Reset(username, password); err != nil {
+		fmt.Printf("Error resetting: %v\n", err)
 		return
 	}
 }
@@ -75,14 +96,10 @@ func verify(username string) {
 	}
 	fmt.Println()
 
-	if success, err := db.Authenticate(username, string(password)); err == nil {
-		if success {
-			fmt.Println("Verification ok")
-		} else {
-			fmt.Println("Verification failed")
-		}
+	if err := db.Authenticate(username, string(password)); err == nil {
+		fmt.Println("Verification ok")
 	} else {
-		fmt.Printf("Error verifying: %v", err)
+		fmt.Printf("Verification error: %v\n", err)
 		return
 	}
 }
@@ -92,6 +109,7 @@ func main() {
 	argAll := flag.Bool("all", false, "list all usernames")
 	argDelete := flag.String("delete", "", "delete a user")
 	argInsert := flag.String("insert", "", "insert a user")
+	argReset := flag.String("reset", "", "reset the password of a user")
 	argVerify := flag.String("verify", "", "verify the password of a user")
 	dbDriver, dbDSN := server.DBFlags()
 	flag.Parse()
@@ -113,6 +131,8 @@ func main() {
 		all()
 	case *argDelete != "":
 		delete(*argDelete)
+	case *argReset != "":
+		reset(*argReset)
 	case *argVerify != "":
 		verify(*argVerify)
 	default:
