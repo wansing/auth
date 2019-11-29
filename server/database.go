@@ -11,6 +11,8 @@ import (
 
 var preferredScheme = Bcrypt{}
 
+var ErrNoRows = sql.ErrNoRows
+
 type Database struct {
 	*sql.DB
 	allStmt    *sql.Stmt
