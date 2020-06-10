@@ -10,36 +10,31 @@ type STARTTLS struct {
 	Port uint
 }
 
-func (s *STARTTLS) Authenticate(email, password string) (success bool, err error) {
-
-	if !s.Available() {
-		return
-	}
+func (s STARTTLS) Authenticate(email, password string) (bool, error) {
 
 	client, err := smtp.Dial("localhost:" + fmt.Sprint(s.Port))
 	if err != nil {
-		return
+		return false, err
 	}
+	defer client.Close()
 
 	err = client.StartTLS(&tls.Config{InsecureSkipVerify: true})
 	if err != nil {
-		return
+		return false, err
 	}
 
 	err = client.Auth(smtp.PlainAuth("", email, password, "localhost")) // hostname must be the same as in NewClient
 	if err == nil {
-		success = true
+		return true, nil
 	} else {
-		err = nil // err was probably "authentication failed"
+		return false, nil // err was probably "authentication failed"
 	}
-
-	return
 }
 
-func (s *STARTTLS) Available() bool {
+func (s STARTTLS) Available() bool {
 	return s.Port >= 1 && s.Port <= 65535
 }
 
-func (s *STARTTLS) Name() string {
+func (s STARTTLS) Name() string {
 	return "STARTTLS"
 }

@@ -24,7 +24,7 @@ func handle(conn net.Conn) {
 
 	data, err := ioutil.ReadAll(conn)
 	if err != nil {
-		log.Println("Error reading from connection: ", err)
+		log.Printf("error reading from connection: ", err)
 		return
 	}
 
@@ -42,6 +42,9 @@ func handle(conn net.Conn) {
 
 	if done && authenticated {
 		_, err = conn.Write([]byte("authenticated"))
+		if err != nil {
+			log.Printf("error writing to connection: %v", err)
+		}
 	}
 
 	_ = conn.Close()
@@ -60,12 +63,12 @@ func main() {
 	var err error
 	Db, err = server.OpenDatabase(*dbDriver, *dbDSN)
 	if err != nil {
-		log.Println(err)
+		log.Printf("error opening database: %v", err)
 		return
 	}
 	defer Db.Close()
 
-	log.Printf("Opened %s database %s", *dbDriver, *dbDSN)
+	log.Printf("opened %s database %s", *dbDriver, *dbDSN)
 
 	// listen to socket
 
@@ -78,14 +81,14 @@ func main() {
 
 	listener, err := net.Listen("unix", *socketPath)
 	if err != nil {
-		log.Printf("Error creating socket: %v", err)
+		log.Printf("error creating socket: %v", err)
 		return
 	}
 	defer listener.Close() // removes the socket file
 
 	_ = os.Chmod(*socketPath, os.ModePerm) // chmod 777, so people can connect to the listener
 
-	log.Printf("Listening to %s", *socketPath)
+	log.Printf("listening to %s", *socketPath)
 
 	// accept connections
 
@@ -98,7 +101,7 @@ func main() {
 				if listenerClosed {
 					break
 				} else {
-					log.Println(err)
+					log.Printf("error accepting connection: %v", err)
 					continue
 				}
 			}
@@ -112,7 +115,7 @@ func main() {
 	signal.Notify(sigintChannel, os.Interrupt, syscall.SIGTERM) // SIGINT (Interrupt) or SIGTERM
 	<-sigintChannel
 
-	log.Println("Received shutdown signal")
+	log.Println("received shutdown signal")
 	listenerClosed = true
 	listener.Close()
 	wg.Wait()

@@ -13,39 +13,45 @@ type SASLPlain struct {
 	Socket string
 }
 
-func (s *SASLPlain) Authenticate(email, password string) (success bool, err error) {
-
-	if !s.Available() {
-		return
-	}
+func (s SASLPlain) Authenticate(email, password string) (bool, error) {
 
 	conn, err := net.Dial("unix", s.Socket)
 	if err != nil {
-		return
+		return false, err
 	}
 	defer conn.Close()
 
-	_, ir, err := sasl.NewPlainClient("", email, password).Start()
+	_, initialResponse, err := sasl.NewPlainClient("", email, password).Start()
+	if err != nil {
+		return false, err
+	}
 
-	conn.Write(ir)
-	conn.(*net.UnixConn).CloseWrite()
+	_, err = conn.Write(initialResponse)
+	if err != nil {
+		return false, err
+	}
+
+	err = conn.(*net.UnixConn).CloseWrite()
+	if err != nil {
+		return false, err
+	}
 
 	result, err := ioutil.ReadAll(conn)
 	if err != nil {
-		return
+		return false, err
 	}
 
 	if strings.ToLower(string(result)) == "authenticated" {
-		success = true
+		return true, nil
+	} else {
+		return false, nil
 	}
-
-	return
 }
 
-func (s *SASLPlain) Available() bool {
+func (s SASLPlain) Available() bool {
 	return s.Socket != ""
 }
 
-func (s *SASLPlain) Name() string {
+func (s SASLPlain) Name() string {
 	return "SASL Plain via Unix Socket (non-standardized)"
 }

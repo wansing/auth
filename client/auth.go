@@ -1,16 +1,20 @@
 package client
 
-import "log"
+import "fmt"
 
 type Authenticators []Authenticator
 
 type Authenticator interface {
-	Authenticate(email, password string) (success bool, err error)
+	Authenticate(email, password string) (success bool, err error) // should not be called if Available() returns false
 	Available() bool
 	Name() string
 }
 
-func (as Authenticators) Authenticate(email, password string) (success bool, err error) {
+// Tries the contained authenticators with the given credentials.
+// If an authenticator returns an error, we continue with the next one. The last error is returned.
+func (as Authenticators) Authenticate(email, password string) (bool, error) {
+
+	var lastErr error
 
 	for _, a := range as {
 
@@ -18,15 +22,19 @@ func (as Authenticators) Authenticate(email, password string) (success bool, err
 			continue
 		}
 
-		success, err = a.Authenticate(email, password)
-		if success {
-			break
-		}
+		success, err := a.Authenticate(email, password)
+
 		if err != nil {
-			log.Printf("Error authenticating with %s authenticator: %v", a.Name(), err)
+			lastErr = fmt.Errorf("error querying authenticator %s: %v", a.Name(), err)
+			success = false // security measure: in case of error, discard success
+		}
+
+		if success {
+			return true, lastErr
 		}
 	}
-	return
+
+	return false, lastErr
 }
 
 func (as Authenticators) Available() bool {
