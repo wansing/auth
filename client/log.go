@@ -5,7 +5,8 @@ import (
 	"net/http"
 )
 
-func ExtractClientIP(r *http.Request) string {
+// extracts the client's IP address from a request
+func ExtractIP(r *http.Request) string {
 
 	// "The HTTP server in this package sets RemoteAddr to an "IP:port" address before invoking a handler", so no error expected here
 	var clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)

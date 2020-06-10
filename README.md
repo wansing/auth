@@ -17,8 +17,12 @@ A simple service which processes authentication requests received via:
 ## Design choices
 
 * fail2ban integration with reverse proxies
-  * Issue: client sends a request with a faked "X-Forwarded-For" header, circumvents fail2ban and blacklists someone else
-  * Decision: If authentication fails, `auth.ExtractClientIP` can be used the get the `X-Real-IP`. Your first reverse proxy must set `X-Real-IP` to the client IP address, later proxies must not.
+  * Issue
+    * client sends a request with a faked `X-Forwarded-For` header
+    * nginx appends the client's real IP address to the header value
+    * a software uses the first (faked) `X-Forwarded-For` IP address
+    * fail2ban has no effect, someone else gets blacklisted
+  * Decision: `client.ExtractIP` extracts the `X-Real-IP` header. Your first reverse proxy must set `X-Real-IP` to the client IP address, later proxies must not.
 
 ## Security Considerations
 
